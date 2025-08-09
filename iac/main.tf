@@ -101,7 +101,7 @@ resource "aws_elastic_beanstalk_application" "application" {
 }
 
 resource "aws_elastic_beanstalk_environment" "environment" {
-  name                = "production"
+  name                = "production-private"
   application         = aws_elastic_beanstalk_application.application.name
   solution_stack_name = "64bit Amazon Linux 2023 v3.5.3 running .NET 9"
   version_label       = var.application_version
@@ -139,7 +139,7 @@ resource "aws_elastic_beanstalk_environment" "environment" {
   setting {
     namespace = "aws:elasticbeanstalk:environment"
     name      = "LoadBalancerType"
-    value     = "network"
+    value     = "application"
   }
 
   setting {
