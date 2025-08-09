@@ -416,7 +416,7 @@ resource "aws_apigatewayv2_stage" "bill" {
 
 # EventBridge Configuration
 resource "aws_iam_role" "eventbridge_api_gateway" {
-  name = "bill-scheduler"
+  name = "event-bridge-api-gateway"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
