@@ -101,7 +101,7 @@ resource "aws_elastic_beanstalk_application" "application" {
 }
 
 resource "aws_elastic_beanstalk_environment" "environment" {
-  name                = "production"
+  name                = "production-private"
   application         = aws_elastic_beanstalk_application.application.name
   solution_stack_name = "64bit Amazon Linux 2023 v3.5.3 running .NET 9"
   version_label       = var.application_version
@@ -139,7 +139,7 @@ resource "aws_elastic_beanstalk_environment" "environment" {
   setting {
     namespace = "aws:elasticbeanstalk:environment"
     name      = "LoadBalancerType"
-    value     = "application"
+    value     = "network"
   }
 
   setting {
@@ -155,46 +155,46 @@ resource "aws_elastic_beanstalk_environment" "environment" {
   }
 }
 
-resource "aws_api_gateway_vpc_link" "bill" {
-  name = "bill-vpc-link"
-  target_arns = [aws_elastic_beanstalk_environment.environment.load_balancers[0]]
+resource "aws_apigatewayv2_vpc_link" "bill" {
+  name       = "bill-vpc-link"
+  security_group_ids = [aws_security_group.beanstalk_private.id]
+  subnet_ids = data.aws_subnets.default.ids
 }
 
-resource "aws_api_gateway_rest_api" "bill" {
-  name = "bill-api"
+resource "aws_apigatewayv2_api" "bill" {
+  name          = "bill-api"
+  protocol_type = "HTTP"
 
-  endpoint_configuration {
-    types = ["REGIONAL"]
+  cors_configuration {
+    allow_credentials = true
+    allow_headers     = ["*"]
+    allow_methods     = ["*"]
+    allow_origins     = ["*"]
+    expose_headers    = ["*"]
+    max_age           = 86400
   }
 }
 
-resource "aws_api_gateway_resource" "bill_inbox" {
-  rest_api_id = aws_api_gateway_rest_api.bill.id
-  parent_id   = aws_api_gateway_rest_api.bill.root_resource_id
-  path_part   = "inbox"
+resource "aws_apigatewayv2_integration" "inbox_post" {
+  api_id             = aws_apigatewayv2_api.bill.id
+  integration_type   = "HTTP_PROXY"
+  integration_method = "POST"
+  integration_uri    = "http://${aws_elastic_beanstalk_environment.environment.cname}/inbox"
+  connection_type    = "VPC_LINK"
+  connection_id      = aws_apigatewayv2_vpc_link.bill.id
 }
 
-resource "aws_api_gateway_method" "inbox_post" {
-  rest_api_id   = aws_api_gateway_rest_api.bill.id
-  resource_id   = aws_api_gateway_resource.bill_inbox.id
-  http_method   = "POST"
-  authorization = "NONE"
+
+resource "aws_apigatewayv2_route" "inbox_post" {
+  api_id    = aws_apigatewayv2_api.bill.id
+  route_key = "POST /inbox"
+  target    = "integrations/${aws_apigatewayv2_integration.inbox_post.id}"
 }
 
-resource "aws_api_gateway_integration" "inbox_post" {
-  rest_api_id             = aws_api_gateway_rest_api.bill.id
-  resource_id             = aws_api_gateway_resource.bill_inbox.id
-  http_method             = aws_api_gateway_method.inbox_post.http_method
-  integration_http_method = "POST"
-  type                    = "HTTP_PROXY"
-  connection_type         = "VPC_LINK"
-  connection_id           = aws_api_gateway_vpc_link.bill.id
-  uri                     = "http://${aws_elastic_beanstalk_environment.environment.cname}/inbox"
-}
-
-resource "aws_api_gateway_deployment" "bill" {
-  rest_api_id = aws_api_gateway_rest_api.bill.id
-  depends_on = [aws_api_gateway_integration.inbox_post]
+resource "aws_apigatewayv2_stage" "bill" {
+  api_id      = aws_apigatewayv2_api.bill.id
+  name        = "prod"
+  auto_deploy = true
 }
 
 resource "aws_iam_role" "scheduler" {
@@ -254,7 +254,7 @@ resource "aws_cloudwatch_event_connection" "bill" {
 
 resource "aws_cloudwatch_event_api_destination" "bill_inbox" {
   name                = "bill-inbox"
-  invocation_endpoint = "${aws_api_gateway_rest_api.bill.execution_arn}/prod/inbox"
+  invocation_endpoint = "https://${aws_apigatewayv2_api.bill.api_endpoint}/prod/inbox"
   http_method         = "POST"
   connection_arn      = aws_cloudwatch_event_connection.bill.arn
 }
