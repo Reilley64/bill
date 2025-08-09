@@ -242,8 +242,12 @@ resource "aws_lb" "main" {
   }
 }
 
+resource "random_id" "target_group_name" {
+  byte_length = 8
+}
+
 resource "aws_lb_target_group" "app" {
-  name        = "bill-tg"
+  name        = random_id.target_group_name.id
   port        = 8080
   protocol    = "HTTP"
   vpc_id      = data.aws_vpc.default.id
