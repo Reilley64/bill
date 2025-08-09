@@ -304,12 +304,12 @@ resource "aws_ecs_task_definition" "app" {
 
       environment = [
         {
-          name  = "AWS__WorkMail__Username"
-          value = "bill@reilley.dev"
+          name  = "ASPNETCORE_HTTP_PORTS"
+          value = "8080"
         },
         {
-          name  = "ASPNETCORE_URLS"
-          value = "http://+:80"
+          name  = "AWS__WorkMail__Username"
+          value = "bill@reilley.dev"
         }
       ]
 
