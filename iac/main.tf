@@ -22,6 +22,14 @@ data "aws_subnets" "default" {
   }
 }
 
+data "aws_route_table" "default" {
+  vpc_id = data.aws_vpc.default.id
+  filter {
+    name   = "association.main"
+    values = ["true"]
+  }
+}
+
 # Security group for VPC endpoints
 resource "aws_security_group" "vpc_endpoints" {
   name_prefix = "bill-vpc-endpoints-"
@@ -56,6 +64,15 @@ resource "aws_vpc_endpoint" "logs" {
   private_dns_enabled = true
 }
 
+resource "aws_vpc_endpoint" "ecr_dkr" {
+  vpc_id              = data.aws_vpc.default.id
+  service_name        = "com.amazonaws.ap-southeast-2.ecr.dkr"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = data.aws_subnets.default.ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+}
+
 resource "aws_vpc_endpoint" "ecr_api" {
   vpc_id              = data.aws_vpc.default.id
   service_name        = "com.amazonaws.ap-southeast-2.ecr.api"
@@ -63,6 +80,13 @@ resource "aws_vpc_endpoint" "ecr_api" {
   subnet_ids          = data.aws_subnets.default.ids
   security_group_ids  = [aws_security_group.vpc_endpoints.id]
   private_dns_enabled = true
+}
+
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = data.aws_vpc.default.id
+  service_name      = "com.amazonaws.ap-southeast-2.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [data.aws_route_table.default.id]
 }
 
 # Security Groups
@@ -358,7 +382,6 @@ resource "aws_ecs_service" "app" {
   network_configuration {
     subnets          = data.aws_subnets.default.ids
     security_groups = [aws_security_group.ecs_tasks.id]
-    assign_public_ip = false
   }
 
   load_balancer {
