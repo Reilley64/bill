@@ -314,6 +314,10 @@ resource "aws_ecs_task_definition" "app" {
 
       environment = [
         {
+          name  = "PathBase",
+          value = "/prod"
+        },
+        {
           name  = "ASPNETCORE_HTTP_PORTS"
           value = "8080"
         },
