@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <UserSecretsId>19d17436-36f6-42ff-b08f-3b82655d4322</UserSecretsId>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="MediatR" Version="12.5.0" />
+        <PackageReference Include="MediatR.BackgroundService" Version="3.0.1" />
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.7"/>
+    </ItemGroup>
+    
+    <ItemGroup>
+        <ProjectReference Include="../Application/Application.csproj" />
+        <ProjectReference Include="../Infrastructure/Infrastructure.csproj" />
+    </ItemGroup>
+
+</Project>
