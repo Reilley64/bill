@@ -473,7 +473,7 @@ resource "aws_cloudwatch_event_rule" "manual" {
 }
 
 resource "aws_cloudwatch_event_target" "manual" {
-  arn      = "${aws_apigatewayv2_api.bill.execution_arn}/*/POST/inbox"
+  arn      = "${aws_apigatewayv2_api.bill.execution_arn}/$default/POST/inbox"
   rule     = aws_cloudwatch_event_rule.manual.name
   role_arn = aws_iam_role.eventbridge_api_gateway.arn
 }
