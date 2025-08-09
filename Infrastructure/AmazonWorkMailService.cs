@@ -11,7 +11,7 @@ public class AmazonWorkMailService(IConfiguration configuration) : IEmailService
 {
     private readonly string _username = configuration["AWS:WorkMail:Username"] ?? throw new InvalidOperationException("AWS:WorkMail:Username is not set");
     private readonly string _password = configuration["AWS:WorkMail:Password"] ?? throw new InvalidOperationException("AWS:WorkMail:Password is not set");
-
+    
     public async Task<Domain.Email[]> GetUnseenEmailsAsync(CancellationToken cancellationToken)
     {
         using var client = new ImapClient();

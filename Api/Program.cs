@@ -6,6 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddInfrastructure();
+builder.Services.AddSecretsManager(builder.Configuration);
 builder.Services.AddApplication();
 
 builder.Services.ConfigureBackgroundServices();

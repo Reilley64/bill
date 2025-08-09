@@ -80,16 +80,4 @@ resource "aws_elastic_beanstalk_environment" "environment" {
     name      = "AWS__WorkMail__Username"
     value     = "bill@reilley.dev"
   }
-
-  setting {
-    namespace = "aws:elasticbeanstalk:application:environment"
-    name      = "AWS__WorkMail__Password"
-    value     = "{{resolve:secretsmanager:${aws_secretsmanager_secret.aws_workmail_password.name}:SecretString}}"
-  }
-
-  setting {
-    namespace = "aws:elasticbeanstalk:application:environment"
-    name      = "Discord__Webhook__Url"
-    value     = "{{resolve:secretsmanager:${aws_secretsmanager_secret.discord_webhook_url.name}:SecretString}}"
-  }
 }

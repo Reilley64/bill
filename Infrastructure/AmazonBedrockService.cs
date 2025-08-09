@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
+using Amazon.SecretsManager;
 using Bill.Application.Interfaces;
 using Bill.Domain;
 using iText.Kernel.Pdf;
@@ -12,7 +13,7 @@ using Message = Bill.Domain.Message;
 
 namespace Bill.Infrastructure;
 
-public class AmazonBedrockService(IConfiguration configuration, IAmazonBedrockRuntime bedrockClient) : IAgentService
+public class AmazonBedrockService(IConfiguration configuration, IAmazonSecretsManager secretsClient, IAmazonBedrockRuntime bedrockClient) : IAgentService
 {
     private const string ResponseSchemaResource = "Bill.Infrastructure.Schemas.agent-response-schema.json";
     
