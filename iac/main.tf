@@ -244,7 +244,7 @@ resource "aws_lb" "main" {
 
 resource "aws_lb_target_group" "app" {
   name        = "bill-tg"
-  port        = 80
+  port        = 8080
   protocol    = "HTTP"
   vpc_id      = data.aws_vpc.default.id
   target_type = "ip"
@@ -257,12 +257,6 @@ resource "aws_lb_target_group" "app" {
     interval            = 30
     path = "/health"  # Adjust to your health check endpoint
     matcher             = "200"
-  }
-
-  deregistration_delay = 30
-
-  tags = {
-    Name = "bill-tg"
   }
 }
 
@@ -326,7 +320,7 @@ resource "aws_ecs_task_definition" "app" {
 
       portMappings = [
         {
-          containerPort = 80
+          containerPort = 8080
           protocol      = "tcp"
         }
       ]
@@ -362,7 +356,7 @@ resource "aws_ecs_service" "app" {
   load_balancer {
     target_group_arn = aws_lb_target_group.app.arn
     container_name   = "bill"
-    container_port   = 80
+    container_port   = 8080
   }
 
   depends_on = [aws_lb_listener.app]
