@@ -2,17 +2,12 @@ provider "aws" {
   region = "ap-southeast-2"
 }
 
-variable "application_version" {
+variable "github_sha" {
   type = string
 }
 
 variable "discord_webhook_url" {
   type = string
-}
-
-variable "docker_image" {
-  type        = string
-  description = "Docker image URI for the application"
 }
 
 # VPC and Networking
@@ -264,7 +259,7 @@ resource "aws_ecs_task_definition" "app" {
   container_definitions = jsonencode([
     {
       name  = "bill"
-      image = var.docker_image
+      image = "ghcr.io/reilley64/bill/bill:main-${substr(var.github_sha, 0, 7)}"
 
       environment = [
         {
