@@ -13,7 +13,7 @@ using Message = Bill.Domain.Message;
 
 namespace Bill.Infrastructure;
 
-public class AmazonBedrockService(IConfiguration configuration, IAmazonSecretsManager secretsClient, IAmazonBedrockRuntime bedrockClient) : IAgentService
+public class AmazonBedrockService(IConfiguration configuration, IAmazonBedrockRuntime bedrockClient) : IAgentService
 {
     private const string ResponseSchemaResource = "Bill.Infrastructure.Schemas.agent-response-schema.json";
     

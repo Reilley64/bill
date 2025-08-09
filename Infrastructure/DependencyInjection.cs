@@ -10,7 +10,6 @@ public static class DependencyInjection
 {
     public static void AddInfrastructure(this IServiceCollection services)
     {
-        services.AddAWSService<IAmazonSecretsManager>();
         services.AddAWSService<IAmazonBedrockRuntime>();
         
         services.AddHttpClient();
@@ -18,13 +17,5 @@ public static class DependencyInjection
         services.AddScoped<IEmailService, AmazonWorkMailService>();
         services.AddScoped<IAgentService, AmazonBedrockService>();
         services.AddScoped<INotificationService, DiscordNotificationService>();
-    }
-    
-    public static void AddSecretsManager(this IServiceCollection services, IConfigurationBuilder builder)
-    {
-        using var serviceProvider = services.BuildServiceProvider();
-        var secretsManager = serviceProvider.GetRequiredService<IAmazonSecretsManager>();
-        
-        builder.Add(new AmazonSecretsManagerConfigurationSource(secretsManager));
     }
 }

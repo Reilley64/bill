@@ -10,6 +10,12 @@ variable "discord_webhook_url" {
   type = string
 }
 
+variable "docker_image" {
+  type        = string
+  description = "Docker image URI for the application"
+}
+
+# VPC and Networking
 data "aws_vpc" "default" {
   default = true
 }
@@ -21,22 +27,18 @@ data "aws_subnets" "default" {
   }
 }
 
-resource "aws_security_group" "beanstalk_private" {
-  name_prefix = "beanstalk-private-"
+# Security Groups
+resource "aws_security_group" "alb" {
+  name_prefix = "bill-alb-private-"
   vpc_id      = data.aws_vpc.default.id
+  description = "Security group for private ALB"
 
   ingress {
-    from_port = 80
-    to_port   = 80
-    protocol  = "tcp"
-    cidr_blocks = [data.aws_vpc.default.cidr_block]
-  }
-
-  ingress {
-    from_port = 443
-    to_port   = 443
-    protocol  = "tcp"
-    cidr_blocks = [data.aws_vpc.default.cidr_block]
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    security_groups = [aws_security_group.vpc_link.id]
+    description = "Allow traffic from VPC Link only"
   }
 
   egress {
@@ -45,8 +47,55 @@ resource "aws_security_group" "beanstalk_private" {
     protocol  = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = {
+    Name = "bill-alb-private"
+  }
 }
 
+resource "aws_security_group" "ecs_tasks" {
+  name_prefix = "bill-ecs-tasks-"
+  vpc_id      = data.aws_vpc.default.id
+  description = "Security group for ECS tasks"
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    security_groups = [aws_security_group.alb.id]
+    description = "Allow traffic from ALB only"
+  }
+
+  egress {
+    from_port = 0
+    to_port   = 0
+    protocol  = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "bill-ecs-tasks"
+  }
+}
+
+resource "aws_security_group" "vpc_link" {
+  name_prefix = "bill-vpc-link-"
+  vpc_id      = data.aws_vpc.default.id
+  description = "Security group for VPC Link"
+
+  egress {
+    from_port = 0
+    to_port   = 0
+    protocol  = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "bill-vpc-link"
+  }
+}
+
+# Secrets
 resource "random_password" "aws_workmail_password" {
   length = 64
 }
@@ -69,8 +118,9 @@ resource "aws_secretsmanager_secret_version" "discord_webhook_url" {
   secret_string = var.discord_webhook_url
 }
 
-resource "aws_iam_role" "application" {
-  name = "bill"
+# IAM Roles
+resource "aws_iam_role" "ecs_task_execution" {
+  name = "bill-ecs-task-execution"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -79,126 +129,229 @@ resource "aws_iam_role" "application" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "ec2.amazonaws.com"
+          Service = "ecs-tasks.amazonaws.com"
         }
       }
     ]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "application" {
-  role       = aws_iam_role.application.name
+resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
+  role       = aws_iam_role.ecs_task_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy" "ecs_task_execution_secrets" {
+  name = "bill-ecs-task-execution-secrets"
+  role = aws_iam_role.ecs_task_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          aws_secretsmanager_secret.aws_workmail_password.arn,
+          aws_secretsmanager_secret.discord_webhook_url.arn
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role" "ecs_task" {
+  name = "bill-ecs-task"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_task" {
+  role       = aws_iam_role.ecs_task.name
   policy_arn = "arn:aws:iam::aws:policy/PowerUserAccess"
 }
 
-resource "aws_iam_instance_profile" "application" {
-  name = aws_iam_role.application.name
-  role = aws_iam_role.application.name
+# CloudWatch Log Group
+resource "aws_cloudwatch_log_group" "ecs" {
+  name              = "/ecs/bill"
+  retention_in_days = 7
 }
 
-resource "aws_elastic_beanstalk_application" "application" {
-  name = "bill"
-}
+# Private Application Load Balancer
+resource "aws_lb" "main" {
+  name               = "bill-alb-private"
+  internal = true  # This makes it private
+  load_balancer_type = "application"
+  security_groups = [aws_security_group.alb.id]
+  subnets            = data.aws_subnets.default.ids
 
-resource "aws_elastic_beanstalk_environment" "environment" {
-  name                = "production-private"
-  application         = aws_elastic_beanstalk_application.application.name
-  solution_stack_name = "64bit Amazon Linux 2023 v3.5.3 running .NET 9"
-  version_label       = var.application_version
+  enable_deletion_protection = false
+  enable_http2               = true
 
-  setting {
-    namespace = "aws:ec2:vpc"
-    name      = "VPCId"
-    value     = data.aws_vpc.default.id
-  }
-
-  setting {
-    namespace = "aws:ec2:vpc"
-    name      = "Subnets"
-    value     = join(",", data.aws_subnets.default.ids)
-  }
-
-  setting {
-    namespace = "aws:ec2:vpc"
-    name      = "ELBScheme"
-    value     = "internal"
-  }
-
-  setting {
-    namespace = "aws:ec2:vpc"
-    name      = "AssociatePublicIpAddress"
-    value     = "false"
-  }
-
-  setting {
-    namespace = "aws:autoscaling:launchconfiguration"
-    name      = "SecurityGroups"
-    value     = aws_security_group.beanstalk_private.id
-  }
-
-  setting {
-    namespace = "aws:elbv2:loadbalancer"
-    name      = "SecurityGroups"
-    value     = aws_security_group.beanstalk_private.id
-  }
-
-  setting {
-    namespace = "aws:elasticbeanstalk:environment"
-    name      = "LoadBalancerType"
-    value     = "application"
-  }
-
-  setting {
-    namespace = "aws:autoscaling:launchconfiguration"
-    name      = "IamInstanceProfile"
-    value     = aws_iam_instance_profile.application.name
-  }
-
-  setting {
-    namespace = "aws:elasticbeanstalk:application:environment"
-    name      = "AWS__WorkMail__Username"
-    value     = "bill@reilley.dev"
+  tags = {
+    Name = "bill-alb-private"
   }
 }
 
+resource "aws_lb_target_group" "app" {
+  name        = "bill-tg"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = data.aws_vpc.default.id
+  target_type = "ip"
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    timeout             = 5
+    interval            = 30
+    path = "/health"  # Adjust to your health check endpoint
+    matcher             = "200"
+  }
+
+  deregistration_delay = 30
+
+  tags = {
+    Name = "bill-tg"
+  }
+}
+
+resource "aws_lb_listener" "app" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
+  }
+}
+
+# ECS Cluster
+resource "aws_ecs_cluster" "main" {
+  name = "bill-cluster"
+
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
+}
+
+# ECS Task Definition
+resource "aws_ecs_task_definition" "app" {
+  family             = "bill"
+  network_mode       = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                = "256"
+  memory             = "512"
+  execution_role_arn = aws_iam_role.ecs_task_execution.arn
+  task_role_arn      = aws_iam_role.ecs_task.arn
+
+  container_definitions = jsonencode([
+    {
+      name  = "bill"
+      image = var.docker_image
+
+      environment = [
+        {
+          name  = "AWS__WorkMail__Username"
+          value = "bill@reilley.dev"
+        },
+        {
+          name  = "ASPNETCORE_URLS"
+          value = "http://+:80"
+        }
+      ]
+
+      secrets = [
+        {
+          name      = "AWS__WorkMail__Password"
+          valueFrom = aws_secretsmanager_secret.aws_workmail_password.arn
+        },
+        {
+          name      = "Discord__WebhookUrl"
+          valueFrom = aws_secretsmanager_secret.discord_webhook_url.arn
+        }
+      ]
+
+      portMappings = [
+        {
+          containerPort = 80
+          protocol      = "tcp"
+        }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.ecs.name
+          "awslogs-region"        = "ap-southeast-2"
+          "awslogs-stream-prefix" = "ecs"
+        }
+      }
+
+      essential = true
+    }
+  ])
+}
+
+# ECS Service
+resource "aws_ecs_service" "app" {
+  name            = "bill-service"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.app.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = data.aws_subnets.default.ids
+    security_groups = [aws_security_group.ecs_tasks.id]
+    assign_public_ip = false
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.app.arn
+    container_name   = "bill"
+    container_port   = 80
+  }
+
+  depends_on = [aws_lb_listener.app]
+}
+
+# API Gateway with VPC Link (Private access only)
 resource "aws_apigatewayv2_vpc_link" "bill" {
   name       = "bill-vpc-link"
-  security_group_ids = [aws_security_group.beanstalk_private.id]
+  security_group_ids = [aws_security_group.vpc_link.id]
   subnet_ids = data.aws_subnets.default.ids
 }
 
 resource "aws_apigatewayv2_api" "bill" {
-  name          = "bill-api"
+  name          = "bill-api-private"
   protocol_type = "HTTP"
+  description   = "Private API for bill service - EventBridge access only"
 
-  cors_configuration {
-    allow_credentials = false
-    allow_headers     = ["*"]
-    allow_methods     = ["*"]
-    allow_origins     = ["*"]
-    expose_headers    = ["*"]
-    max_age           = 86400
-  }
+  # Remove CORS since this is private
 }
 
-data "aws_lb" "bill" {
-  tags = {
-    "elasticbeanstalk:environment-name" = aws_elastic_beanstalk_environment.environment.name
-  }
-
-  depends_on = [aws_elastic_beanstalk_environment.environment]
-}
-
-data "aws_lb_listener" "bill" {
-  load_balancer_arn = data.aws_lb.bill.arn
-  port = 80
-}
-
-resource "aws_apigatewayv2_integration" "inbox_post" {
+resource "aws_apigatewayv2_integration" "inbox" {
   api_id             = aws_apigatewayv2_api.bill.id
   integration_type   = "HTTP_PROXY"
   integration_method = "POST"
-  integration_uri    = data.aws_lb_listener.bill.arn
+  integration_uri    = aws_lb_listener.app.arn
   connection_type    = "VPC_LINK"
   connection_id      = aws_apigatewayv2_vpc_link.bill.id
 }
@@ -206,7 +359,7 @@ resource "aws_apigatewayv2_integration" "inbox_post" {
 resource "aws_apigatewayv2_route" "inbox_post" {
   api_id    = aws_apigatewayv2_api.bill.id
   route_key = "POST /inbox"
-  target    = "integrations/${aws_apigatewayv2_integration.inbox_post.id}"
+  target    = "integrations/${aws_apigatewayv2_integration.inbox.id}"
 }
 
 resource "aws_apigatewayv2_stage" "bill" {
@@ -215,6 +368,7 @@ resource "aws_apigatewayv2_stage" "bill" {
   auto_deploy = true
 }
 
+# EventBridge Configuration
 resource "aws_iam_role" "scheduler" {
   name = "bill-scheduler"
 
@@ -225,7 +379,7 @@ resource "aws_iam_role" "scheduler" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "events.amazonaws.com"
+          Service = ["events.amazonaws.com", "scheduler.amazonaws.com"]
         }
       }
     ]
@@ -265,7 +419,7 @@ resource "aws_cloudwatch_event_connection" "bill" {
   auth_parameters {
     api_key {
       key   = "x-api-key"
-      value = "test"
+      value = "test"  # Consider using a secret for production
     }
   }
 }
@@ -280,8 +434,8 @@ resource "aws_cloudwatch_event_api_destination" "bill_inbox" {
 resource "aws_cloudwatch_event_rule" "schedule" {
   name                = "bill-schedule"
   schedule_expression = "cron(0 23 * * ? *)"
+  description         = "Daily schedule for bill processing"
 }
-
 
 resource "aws_cloudwatch_event_target" "schedule" {
   arn      = aws_cloudwatch_event_api_destination.bill_inbox.arn
@@ -290,7 +444,8 @@ resource "aws_cloudwatch_event_target" "schedule" {
 }
 
 resource "aws_cloudwatch_event_rule" "manual" {
-  name = "bill-manual"
+  name        = "bill-manual"
+  description = "Manual trigger for bill processing"
 
   event_pattern = jsonencode({
     source = ["bill.manual"]
@@ -302,4 +457,27 @@ resource "aws_cloudwatch_event_target" "manual" {
   arn      = aws_cloudwatch_event_api_destination.bill_inbox.arn
   rule     = aws_cloudwatch_event_rule.manual.name
   role_arn = aws_iam_role.scheduler.arn
+}
+
+# Outputs
+output "ecs_cluster_name" {
+  value = aws_ecs_cluster.main.name
+}
+
+output "ecs_service_name" {
+  value = aws_ecs_service.app.name
+}
+
+output "alb_dns_name" {
+  value       = aws_lb.main.dns_name
+  description = "Private ALB DNS name (not publicly accessible)"
+}
+
+output "api_gateway_endpoint" {
+  value       = "${aws_apigatewayv2_api.bill.api_endpoint}/prod"
+  description = "API Gateway endpoint (only accessible via EventBridge)"
+}
+
+output "manual_trigger_command" {
+  value = "aws events put-events --entries 'Source=bill.manual,DetailType=Manual Trigger,Detail=\"{}\"' --region ap-southeast-2"
 }
