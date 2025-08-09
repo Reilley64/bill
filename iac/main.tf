@@ -388,7 +388,6 @@ resource "aws_apigatewayv2_vpc_link" "bill" {
 resource "aws_apigatewayv2_api" "bill" {
   name          = "bill-api-private"
   protocol_type = "HTTP"
-  description   = "Private API for bill service - EventBridge access only"
 }
 
 resource "aws_apigatewayv2_integration" "inbox" {
@@ -404,6 +403,7 @@ resource "aws_apigatewayv2_route" "inbox_post" {
   api_id    = aws_apigatewayv2_api.bill.id
   route_key = "POST /inbox"
   target    = "integrations/${aws_apigatewayv2_integration.inbox.id}"
+  authorization_type = "AWS_IAM"
 
   depends_on = [aws_apigatewayv2_integration.inbox]
 }
@@ -415,7 +415,7 @@ resource "aws_apigatewayv2_stage" "bill" {
 }
 
 # EventBridge Configuration
-resource "aws_iam_role" "scheduler" {
+resource "aws_iam_role" "eventbridge_api_gateway" {
   name = "bill-scheduler"
 
   assume_role_policy = jsonencode({
@@ -425,16 +425,16 @@ resource "aws_iam_role" "scheduler" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = ["events.amazonaws.com", "scheduler.amazonaws.com"]
+          Service = "events.amazonaws.com"
         }
       }
     ]
   })
 }
 
-resource "aws_iam_role_policy" "scheduler" {
-  name = aws_iam_role.scheduler.name
-  role = aws_iam_role.scheduler.id
+resource "aws_iam_role_policy" "eventbridge_api_gateway" {
+  name = aws_iam_role.eventbridge_api_gateway.name
+  role = aws_iam_role.eventbridge_api_gateway.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -442,39 +442,12 @@ resource "aws_iam_role_policy" "scheduler" {
       {
         Effect = "Allow"
         Action = [
-          "events:InvokeApiDestination"
+          "execute-api:Invoke"
         ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "arn:aws:logs:*:*:*"
+        Resource = "${aws_apigatewayv2_api.bill.execution_arn}/*/*"
       }
     ]
   })
-}
-
-resource "aws_cloudwatch_event_connection" "bill" {
-  name               = "bill"
-  authorization_type = "API_KEY"
-  auth_parameters {
-    api_key {
-      key   = "x-api-key"
-      value = "test"  # Consider using a secret for production
-    }
-  }
-}
-
-resource "aws_cloudwatch_event_api_destination" "bill_inbox" {
-  name                = "bill-inbox"
-  invocation_endpoint = "${aws_apigatewayv2_api.bill.api_endpoint}/inbox"
-  http_method         = "POST"
-  connection_arn      = aws_cloudwatch_event_connection.bill.arn
 }
 
 resource "aws_cloudwatch_event_rule" "schedule" {
@@ -484,9 +457,9 @@ resource "aws_cloudwatch_event_rule" "schedule" {
 }
 
 resource "aws_cloudwatch_event_target" "schedule" {
-  arn      = aws_cloudwatch_event_api_destination.bill_inbox.arn
+  arn      = "${aws_apigatewayv2_api.bill.execution_arn}/*/POST/inbox"
   rule     = aws_cloudwatch_event_rule.schedule.name
-  role_arn = aws_iam_role.scheduler.arn
+  role_arn = aws_iam_role.eventbridge_api_gateway.arn
 }
 
 resource "aws_cloudwatch_event_rule" "manual" {
@@ -500,28 +473,9 @@ resource "aws_cloudwatch_event_rule" "manual" {
 }
 
 resource "aws_cloudwatch_event_target" "manual" {
-  arn      = aws_cloudwatch_event_api_destination.bill_inbox.arn
+  arn      = "${aws_apigatewayv2_api.bill.execution_arn}/*/POST/inbox"
   rule     = aws_cloudwatch_event_rule.manual.name
-  role_arn = aws_iam_role.scheduler.arn
-}
-
-# Outputs
-output "ecs_cluster_name" {
-  value = aws_ecs_cluster.main.name
-}
-
-output "ecs_service_name" {
-  value = aws_ecs_service.app.name
-}
-
-output "alb_dns_name" {
-  value       = aws_lb.main.dns_name
-  description = "Private ALB DNS name (not publicly accessible)"
-}
-
-output "api_gateway_endpoint" {
-  value       = "${aws_apigatewayv2_api.bill.api_endpoint}/prod"
-  description = "API Gateway endpoint (only accessible via EventBridge)"
+  role_arn = aws_iam_role.eventbridge_api_gateway.arn
 }
 
 output "manual_trigger_command" {
