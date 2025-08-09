@@ -10,6 +10,43 @@ variable "discord_webhook_url" {
   type = string
 }
 
+data "aws_vpc" "default" {
+  default = true
+}
+
+data "aws_subnets" "default" {
+  filter {
+    name = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
+
+resource "aws_security_group" "beanstalk_private" {
+  name_prefix = "beanstalk-private-"
+  vpc_id      = data.aws_vpc.default.id
+
+  ingress {
+    from_port = 80
+    to_port   = 80
+    protocol  = "tcp"
+    cidr_blocks = [data.aws_vpc.default.cidr_block]
+  }
+
+  ingress {
+    from_port = 443
+    to_port   = 443
+    protocol  = "tcp"
+    cidr_blocks = [data.aws_vpc.default.cidr_block]
+  }
+
+  egress {
+    from_port = 0
+    to_port   = 0
+    protocol  = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
 resource "random_password" "aws_workmail_password" {
   length = 64
 }
@@ -64,10 +101,46 @@ resource "aws_elastic_beanstalk_application" "application" {
 }
 
 resource "aws_elastic_beanstalk_environment" "environment" {
-  name                = "production"
+  name                = "production-private"
   application         = aws_elastic_beanstalk_application.application.name
   solution_stack_name = "64bit Amazon Linux 2023 v3.5.3 running .NET 9"
   version_label       = var.application_version
+
+  setting {
+    namespace = "aws:ec2:vpc"
+    name      = "VPCId"
+    value     = data.aws_vpc.default.id
+  }
+
+  setting {
+    namespace = "aws:ec2:vpc"
+    name      = "Subnets"
+    value = join(",", data.aws_subnets.default.ids)
+  }
+
+  setting {
+    namespace = "aws:ec2:vpc"
+    name      = "ELBScheme"
+    value     = "internal"
+  }
+
+  setting {
+    namespace = "aws:autoscaling:launchconfiguration"
+    name      = "SecurityGroups"
+    value     = aws_security_group.beanstalk_private.id
+  }
+
+  setting {
+    namespace = "aws:elbv2:loadbalancer"
+    name      = "SecurityGroups"
+    value     = aws_security_group.beanstalk_private.id
+  }
+
+  setting {
+    namespace = "aws:elasticbeanstalk:environment"
+    name      = "LoadBalancerType"
+    value     = "application"
+  }
 
   setting {
     namespace = "aws:autoscaling:launchconfiguration"
@@ -80,4 +153,93 @@ resource "aws_elastic_beanstalk_environment" "environment" {
     name      = "AWS__WorkMail__Username"
     value     = "bill@reilley.dev"
   }
+}
+
+resource "aws_iam_role" "scheduler" {
+  name = "bill-scheduler"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "events.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "scheduler" {
+  name = aws_iam_role.scheduler.name
+  role = aws_iam_role.scheduler.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "events:InvokeApiDestination"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      }
+    ]
+  })
+}
+
+resource "aws_cloudwatch_event_connection" "bill" {
+  name = "bill"
+  authorization_type = "API_KEY"
+  auth_parameters {
+    api_key {
+      key   = "x-api-key"
+      value = "test"
+    }
+  }
+}
+
+resource "aws_cloudwatch_event_api_destination" "bill_inbox" {
+  name                = "bill-inbox"
+  invocation_endpoint = "http://${aws_elastic_beanstalk_environment.environment.cname}/inbox"
+  http_method         = "POST"
+  connection_arn      = aws_cloudwatch_event_connection.bill.arn
+}
+
+resource "aws_cloudwatch_event_rule" "schedule" {
+  name                = "bill-schedule"
+  schedule_expression = "cron(0 23 * * ? *)"
+}
+
+
+resource "aws_cloudwatch_event_target" "schedule" {
+  arn  = aws_cloudwatch_event_api_destination.bill_inbox.arn
+  rule = aws_cloudwatch_event_rule.schedule.name
+  role_arn = aws_iam_role.scheduler.arn
+}
+
+resource "aws_cloudwatch_event_rule" "manual" {
+  name        = "bill-manual"
+
+  event_pattern = jsonencode({
+    source      = ["bill.manual"]
+    detail-type = ["Manual Trigger"]
+  })
+}
+
+resource "aws_cloudwatch_event_target" "manual" {
+  arn  = aws_cloudwatch_event_api_destination.bill_inbox.arn
+  rule = aws_cloudwatch_event_rule.manual.name
+  role_arn = aws_iam_role.scheduler.arn
 }
