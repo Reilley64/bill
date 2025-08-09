@@ -23,6 +23,22 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.sln') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+      - name: Cache build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/bin
+            **/obj
+          key: ${{ runner.os }}-build-${{ hashFiles('**/*.cs', '**/*.csproj', '**/*.sln') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
       - name: Restore dependencies
         run: dotnet restore Bill.sln
       - name: Build application
