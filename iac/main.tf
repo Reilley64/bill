@@ -10,6 +10,7 @@ variable "discord_webhook_url" {
   type = string
 }
 
+
 # VPC and Networking
 data "aws_vpc" "default" {
   default = true
@@ -20,6 +21,46 @@ data "aws_subnets" "default" {
     name = "vpc-id"
     values = [data.aws_vpc.default.id]
   }
+}
+
+# VPC Endpoints
+resource "aws_security_group" "vpc_endpoints" {
+  name_prefix = "bill-vpc-endpoints-"
+  vpc_id      = data.aws_vpc.default.id
+  description = "Security group for VPC endpoints"
+
+  ingress {
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs_tasks.id]
+    description     = "Allow HTTPS from ECS tasks"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_vpc_endpoint" "secretsmanager" {
+  vpc_id              = data.aws_vpc.default.id
+  service_name        = "com.amazonaws.ap-southeast-2.secretsmanager"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = data.aws_subnets.default.ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+}
+
+resource "aws_vpc_endpoint" "logs" {
+  vpc_id              = data.aws_vpc.default.id
+  service_name        = "com.amazonaws.ap-southeast-2.logs"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = data.aws_subnets.default.ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
 }
 
 # Security Groups
