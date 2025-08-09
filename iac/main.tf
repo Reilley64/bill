@@ -389,8 +389,6 @@ resource "aws_apigatewayv2_api" "bill" {
   name          = "bill-api-private"
   protocol_type = "HTTP"
   description   = "Private API for bill service - EventBridge access only"
-
-  # Remove CORS since this is private
 }
 
 resource "aws_apigatewayv2_integration" "inbox" {
@@ -412,7 +410,7 @@ resource "aws_apigatewayv2_route" "inbox_post" {
 
 resource "aws_apigatewayv2_stage" "bill" {
   api_id      = aws_apigatewayv2_api.bill.id
-  name        = "prod"
+  name        = "$default"
   auto_deploy = true
 }
 
@@ -474,7 +472,7 @@ resource "aws_cloudwatch_event_connection" "bill" {
 
 resource "aws_cloudwatch_event_api_destination" "bill_inbox" {
   name                = "bill-inbox"
-  invocation_endpoint = "${aws_apigatewayv2_api.bill.api_endpoint}/prod/inbox"
+  invocation_endpoint = "${aws_apigatewayv2_api.bill.api_endpoint}/inbox"
   http_method         = "POST"
   connection_arn      = aws_cloudwatch_event_connection.bill.arn
 }
