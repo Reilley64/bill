@@ -175,11 +175,24 @@ resource "aws_apigatewayv2_api" "bill" {
   }
 }
 
+data "aws_lb" "bill" {
+  tags = {
+    "elasticbeanstalk:environment-name" = aws_elastic_beanstalk_environment.environment.name
+  }
+
+  depends_on = [aws_elastic_beanstalk_environment.environment]
+}
+
+data "aws_lb_listener" "bill" {
+  load_balancer_arn = data.aws_lb.bill.arn
+  port = 80
+}
+
 resource "aws_apigatewayv2_integration" "inbox_post" {
   api_id             = aws_apigatewayv2_api.bill.id
   integration_type   = "HTTP_PROXY"
   integration_method = "POST"
-  integration_uri    = "http://${aws_elastic_beanstalk_environment.environment.cname}/inbox"
+  integration_uri    = data.aws_lb_listener.bill.arn
   connection_type    = "VPC_LINK"
   connection_id      = aws_apigatewayv2_vpc_link.bill.id
 }
@@ -254,7 +267,7 @@ resource "aws_cloudwatch_event_connection" "bill" {
 
 resource "aws_cloudwatch_event_api_destination" "bill_inbox" {
   name                = "bill-inbox"
-  invocation_endpoint = "https://${aws_apigatewayv2_api.bill.api_endpoint}/prod/inbox"
+  invocation_endpoint = "${aws_apigatewayv2_api.bill.api_endpoint}/prod/inbox"
   http_method         = "POST"
   connection_arn      = aws_cloudwatch_event_connection.bill.arn
 }
