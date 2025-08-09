@@ -258,6 +258,10 @@ resource "aws_lb_target_group" "app" {
     path = "/health"  # Adjust to your health check endpoint
     matcher             = "200"
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_lb_listener" "app" {
