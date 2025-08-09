@@ -19,46 +19,35 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
         with:
-          dotnet-version: '9.0.x'
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.sln') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-      - name: Cache build output
-        uses: actions/cache@v4
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
         with:
-          path: |
-            **/bin
-            **/obj
-          key: ${{ runner.os }}-build-${{ hashFiles('**/*.cs', '**/*.csproj', '**/*.sln') }}
-          restore-keys: |
-            ${{ runner.os }}-build-
-      - name: Restore dependencies
-        run: dotnet restore Bill.sln
-      - name: Build application
-        run: dotnet build --configuration Release --no-restore
-      - name: Publish application
-        run: dotnet publish Api/Api.csproj --configuration Release --output ./publish --no-build --self-contained false
-      - name: Archive
-        working-directory: publish
-        run: zip -r ../release.zip .
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::633193633564:role/GitHubActionAssumeRoleWithAction
-          role-session-name: GitHub_to_AWS_via_FederatedOIDC
-          aws-region: ap-southeast-2
-      - name: Upload to S3
-        run: aws s3 cp release.zip s3://billreleases/${{ github.sha }}.zip
-      - name: Create EB Application Version
-        run: aws elasticbeanstalk create-application-version --application-name "bill" --version-label "${{ github.sha }}" --source-bundle S3Bucket="billreleases",S3Key="${{ github.sha }}.zip"
-
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          
   deploy:
     runs-on: ubuntu-latest
     needs: build
