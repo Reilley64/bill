@@ -101,7 +101,7 @@ resource "aws_elastic_beanstalk_application" "application" {
 }
 
 resource "aws_elastic_beanstalk_environment" "environment" {
-  name                = "production-private"
+  name                = "production"
   application         = aws_elastic_beanstalk_application.application.name
   solution_stack_name = "64bit Amazon Linux 2023 v3.5.3 running .NET 9"
   version_label       = var.application_version
@@ -166,7 +166,7 @@ resource "aws_apigatewayv2_api" "bill" {
   protocol_type = "HTTP"
 
   cors_configuration {
-    allow_credentials = true
+    allow_credentials = false
     allow_headers     = ["*"]
     allow_methods     = ["*"]
     allow_origins     = ["*"]
