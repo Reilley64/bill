@@ -22,6 +22,49 @@ data "aws_subnets" "default" {
   }
 }
 
+# Security group for VPC endpoints
+resource "aws_security_group" "vpc_endpoints" {
+  name_prefix = "bill-vpc-endpoints-"
+  vpc_id      = data.aws_vpc.default.id
+  description = "Security group for VPC endpoints"
+
+  ingress {
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs_tasks.id]
+    description     = "Allow HTTPS from ECS tasks"
+  }
+}
+
+# VPC Endpoints for AWS services
+resource "aws_vpc_endpoint" "secrets_manager" {
+  vpc_id              = data.aws_vpc.default.id
+  service_name        = "com.amazonaws.ap-southeast-2.secretsmanager"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = data.aws_subnets.default.ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+}
+
+resource "aws_vpc_endpoint" "logs" {
+  vpc_id              = data.aws_vpc.default.id
+  service_name        = "com.amazonaws.ap-southeast-2.logs"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = data.aws_subnets.default.ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+}
+
+resource "aws_vpc_endpoint" "ecr_api" {
+  vpc_id              = data.aws_vpc.default.id
+  service_name        = "com.amazonaws.ap-southeast-2.ecr.api"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = data.aws_subnets.default.ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+}
+
 # Security Groups
 resource "aws_security_group" "alb" {
   name_prefix = "bill-alb-private-"
@@ -355,6 +398,8 @@ resource "aws_apigatewayv2_route" "inbox_post" {
   api_id    = aws_apigatewayv2_api.bill.id
   route_key = "POST /inbox"
   target    = "integrations/${aws_apigatewayv2_integration.inbox.id}"
+
+  depends_on = [aws_apigatewayv2_integration.inbox]
 }
 
 resource "aws_apigatewayv2_stage" "bill" {
