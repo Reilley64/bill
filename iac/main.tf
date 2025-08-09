@@ -192,11 +192,10 @@ resource "aws_apigatewayv2_integration" "inbox_post" {
   api_id             = aws_apigatewayv2_api.bill.id
   integration_type   = "HTTP_PROXY"
   integration_method = "POST"
-  integration_uri    = data.aws_lb_listener.bill.arn
+  integration_uri    = "http://${data.aws_lb.bill.dns_name}/inbox"
   connection_type    = "VPC_LINK"
   connection_id      = aws_apigatewayv2_vpc_link.bill.id
 }
-
 
 resource "aws_apigatewayv2_route" "inbox_post" {
   api_id    = aws_apigatewayv2_api.bill.id
