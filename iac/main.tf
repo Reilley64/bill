@@ -101,7 +101,7 @@ resource "aws_elastic_beanstalk_application" "application" {
 }
 
 resource "aws_elastic_beanstalk_environment" "environment" {
-  name                = "production-private"
+  name                = "production"
   application         = aws_elastic_beanstalk_application.application.name
   solution_stack_name = "64bit Amazon Linux 2023 v3.5.3 running .NET 9"
   version_label       = var.application_version
@@ -155,6 +155,48 @@ resource "aws_elastic_beanstalk_environment" "environment" {
   }
 }
 
+resource "aws_api_gateway_vpc_link" "bill" {
+  name = "bill-vpc-link"
+  target_arns = [aws_elastic_beanstalk_environment.environment.load_balancers[0]]
+}
+
+resource "aws_api_gateway_rest_api" "bill" {
+  name = "bill-api"
+
+  endpoint_configuration {
+    types = ["REGIONAL"]
+  }
+}
+
+resource "aws_api_gateway_resource" "bill_inbox" {
+  rest_api_id = aws_api_gateway_rest_api.bill.id
+  parent_id   = aws_api_gateway_rest_api.bill.root_resource_id
+  path_part   = "inbox"
+}
+
+resource "aws_api_gateway_method" "inbox_post" {
+  rest_api_id   = aws_api_gateway_rest_api.bill.id
+  resource_id   = aws_api_gateway_resource.bill_inbox.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "inbox_post" {
+  rest_api_id             = aws_api_gateway_rest_api.bill.id
+  resource_id             = aws_api_gateway_resource.bill_inbox.id
+  http_method             = aws_api_gateway_method.inbox_post.http_method
+  integration_http_method = "POST"
+  type                    = "HTTP_PROXY"
+  connection_type         = "VPC_LINK"
+  connection_id           = aws_api_gateway_vpc_link.bill.id
+  uri                     = "http://${aws_elastic_beanstalk_environment.environment.cname}/inbox"
+}
+
+resource "aws_api_gateway_deployment" "bill" {
+  rest_api_id = aws_api_gateway_rest_api.bill.id
+  depends_on = [aws_api_gateway_integration.inbox_post]
+}
+
 resource "aws_iam_role" "scheduler" {
   name = "bill-scheduler"
 
@@ -200,7 +242,7 @@ resource "aws_iam_role_policy" "scheduler" {
 }
 
 resource "aws_cloudwatch_event_connection" "bill" {
-  name = "bill"
+  name               = "bill"
   authorization_type = "API_KEY"
   auth_parameters {
     api_key {
@@ -212,7 +254,7 @@ resource "aws_cloudwatch_event_connection" "bill" {
 
 resource "aws_cloudwatch_event_api_destination" "bill_inbox" {
   name                = "bill-inbox"
-  invocation_endpoint = "http://${aws_elastic_beanstalk_environment.environment.cname}/inbox"
+  invocation_endpoint = "${aws_api_gateway_rest_api.bill.execution_arn}/prod/inbox"
   http_method         = "POST"
   connection_arn      = aws_cloudwatch_event_connection.bill.arn
 }
@@ -224,22 +266,22 @@ resource "aws_cloudwatch_event_rule" "schedule" {
 
 
 resource "aws_cloudwatch_event_target" "schedule" {
-  arn  = aws_cloudwatch_event_api_destination.bill_inbox.arn
-  rule = aws_cloudwatch_event_rule.schedule.name
+  arn      = aws_cloudwatch_event_api_destination.bill_inbox.arn
+  rule     = aws_cloudwatch_event_rule.schedule.name
   role_arn = aws_iam_role.scheduler.arn
 }
 
 resource "aws_cloudwatch_event_rule" "manual" {
-  name        = "bill-manual"
+  name = "bill-manual"
 
   event_pattern = jsonencode({
-    source      = ["bill.manual"]
+    source = ["bill.manual"]
     detail-type = ["Manual Trigger"]
   })
 }
 
 resource "aws_cloudwatch_event_target" "manual" {
-  arn  = aws_cloudwatch_event_api_destination.bill_inbox.arn
-  rule = aws_cloudwatch_event_rule.manual.name
+  arn      = aws_cloudwatch_event_api_destination.bill_inbox.arn
+  rule     = aws_cloudwatch_event_rule.manual.name
   role_arn = aws_iam_role.scheduler.arn
 }
