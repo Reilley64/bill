@@ -115,13 +115,19 @@ resource "aws_elastic_beanstalk_environment" "environment" {
   setting {
     namespace = "aws:ec2:vpc"
     name      = "Subnets"
-    value = join(",", data.aws_subnets.default.ids)
+    value     = join(",", data.aws_subnets.default.ids)
   }
 
   setting {
     namespace = "aws:ec2:vpc"
     name      = "ELBScheme"
     value     = "internal"
+  }
+
+  setting {
+    namespace = "aws:ec2:vpc"
+    name      = "AssociatePublicIpAddress"
+    value     = "false"
   }
 
   setting {
