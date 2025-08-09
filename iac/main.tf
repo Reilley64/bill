@@ -95,8 +95,8 @@ resource "aws_security_group" "ecs_tasks" {
   description = "Security group for ECS tasks"
 
   ingress {
-    from_port   = 80
-    to_port     = 80
+    from_port   = 8080
+    to_port     = 8080
     protocol    = "tcp"
     security_groups = [aws_security_group.alb.id]
     description = "Allow traffic from ALB only"
@@ -118,6 +118,14 @@ resource "aws_security_group" "vpc_link" {
   name_prefix = "bill-vpc-link-"
   vpc_id      = data.aws_vpc.default.id
   description = "Security group for VPC Link"
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTP from API Gateway"
+  }
 
   egress {
     from_port = 0
