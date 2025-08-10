@@ -132,6 +132,18 @@ resource "aws_ecs_cluster" "bill" {
   }
 }
 
+resource "aws_ecs_cluster_capacity_providers" "bill" {
+  cluster_name = aws_ecs_cluster.bill.name
+
+  capacity_providers = ["FARGATE_SPOT"]
+
+  default_capacity_provider_strategy {
+    base              = 1
+    weight            = 100
+    capacity_provider = "FARGATE_SPOT"
+  }
+}
+
 # ECS Task Definition
 resource "aws_ecs_task_definition" "bill" {
   family             = "bill"
@@ -241,11 +253,6 @@ resource "aws_cloudwatch_event_target" "schedule" {
   ecs_target {
     task_definition_arn = aws_ecs_task_definition.bill.arn
 
-    capacity_provider_strategy {
-      capacity_provider = "FARGATE_SPOT"
-      weight            = 1
-    }
-
     network_configuration {
       subnets          = data.aws_subnets.default.ids
       security_groups = [data.aws_security_group.default.id]
@@ -271,11 +278,6 @@ resource "aws_cloudwatch_event_target" "manual" {
 
   ecs_target {
     task_definition_arn = aws_ecs_task_definition.bill.arn
-
-    capacity_provider_strategy {
-      capacity_provider = "FARGATE_SPOT"
-      weight            = 1
-    }
 
     network_configuration {
       subnets          = data.aws_subnets.default.ids
