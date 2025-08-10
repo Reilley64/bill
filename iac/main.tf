@@ -240,8 +240,6 @@ resource "aws_cloudwatch_event_target" "schedule" {
 
   ecs_target {
     task_definition_arn = aws_ecs_task_definition.bill.arn
-    launch_type         = "FARGATE"
-    platform_version    = "LATEST"
 
     capacity_provider_strategy {
       capacity_provider = "FARGATE_SPOT"
@@ -273,8 +271,6 @@ resource "aws_cloudwatch_event_target" "manual" {
 
   ecs_target {
     task_definition_arn = aws_ecs_task_definition.bill.arn
-    launch_type         = "FARGATE"
-    platform_version    = "LATEST"
 
     capacity_provider_strategy {
       capacity_provider = "FARGATE_SPOT"
