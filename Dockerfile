@@ -17,8 +17,7 @@ COPY --link . .
 RUN dotnet publish Api/Api.csproj -a $TARGETARCH --no-restore -o /app
 
 # Runtime stage
-FROM mcr.microsoft.com/dotnet/aspnet:9.0-alpine
-EXPOSE 8080
+FROM mcr.microsoft.com/dotnet/runtime:9.0-alpine
 WORKDIR /app
 COPY --link --from=build /app .
 USER $APP_UID

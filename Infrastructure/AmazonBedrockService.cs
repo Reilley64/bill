@@ -17,7 +17,7 @@ public class AmazonBedrockService(IConfiguration configuration, IAmazonBedrockRu
 {
     private const string ResponseSchemaResource = "Bill.Infrastructure.Schemas.agent-response-schema.json";
     
-    private readonly string _modelId = configuration["AWS:Bedrock:ModelId"] ?? throw new InvalidOperationException("AWS:Bedrock:ModelId is not set");
+    private readonly string _modelId = configuration["AWS:Bedrock:ModelId"] ?? "anthropic.claude-3-haiku-20240307-v1:0";
 
     public async Task<List<Message>> ProcessAttachmentsAsync(IEnumerable<Attachment> attachments, CancellationToken cancellationToken)
     {
