@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using Amazon.BedrockRuntime;
 using Amazon.BedrockRuntime.Model;
-using Amazon.SecretsManager;
 using Bill.Application.Interfaces;
 using Bill.Domain;
 using iText.Kernel.Pdf;
@@ -15,7 +14,7 @@ namespace Bill.Infrastructure;
 
 public class AmazonBedrockService(IConfiguration configuration, IAmazonBedrockRuntime bedrockClient) : IAgentService
 {
-    private const string ResponseSchemaResource = "Bill.Infrastructure.Schemas.agent-response-schema.json";
+    private const string ResponseSchemaResource = "Bill.Infrastructure.Schemas.agent-response.json";
     
     private readonly string _modelId = configuration["AWS:Bedrock:ModelId"] ?? "anthropic.claude-3-haiku-20240307-v1:0";
 

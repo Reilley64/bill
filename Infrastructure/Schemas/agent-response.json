@@ -6,8 +6,8 @@
     "properties": {
       "Subject": {
         "type": "string",
-        "enum": ["Internet", "Energy", "Unknown"],
-        "description": "Description or subject of the bill"
+        "enum": ["Internet", "Energy", "Water", "Unknown"],
+        "description": "Subject of the bill"
       },
       "Company": {
         "type": "string",
